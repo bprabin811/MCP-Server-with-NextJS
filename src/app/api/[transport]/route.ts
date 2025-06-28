@@ -36,6 +36,27 @@ interface CustomTool {
   customLogic?: string;
 }
 
+// Cache for tools with timestamp
+let toolsCache: {
+  tools: CustomTool[];
+  timestamp: number;
+  registered: Set<string>;
+} = {
+  tools: [],
+  timestamp: 0,
+  registered: new Set()
+};
+
+// Cache duration in milliseconds (5 seconds for more responsive updates)
+const CACHE_DURATION = 5 * 1000;
+
+// Function to invalidate the tools cache
+export function invalidateToolsCache() {
+  toolsCache.timestamp = 0;
+  toolsCache.registered.clear();
+  console.log('🔄 Tools cache invalidated');
+}
+
 // Convert parameter schema to Zod schema
 function parameterToZodSchema(param: ParameterSchema): z.ZodType<unknown> {
   let schema: z.ZodType<unknown>;
@@ -317,58 +338,129 @@ async function executeApiTool(tool: CustomTool, params: Record<string, unknown>)
   };
 }
 
-// Load and register custom tools
-async function loadCustomTools() {
+// Load and register custom tools with caching
+async function loadCustomTools(forceReload = false) {
   try {
+    const now = Date.now();
+    
+    // Return cached tools if they're still fresh and not forcing reload
+    if (!forceReload && toolsCache.timestamp > 0 && (now - toolsCache.timestamp) < CACHE_DURATION) {
+      return toolsCache.tools;
+    }
+    
+    let tools: CustomTool[] = [];
     if (isDatabaseEnabled()) {
-      return await getToolsFromDatabase();
+      tools = await getToolsFromDatabase();
     } else {
       // In MCP server context, we can't access localStorage directly
       // Custom tools will only be available if database is enabled
-      return [];
+      tools = [];
     }
+    
+    // Update cache
+    toolsCache = {
+      tools,
+      timestamp: now,
+      registered: new Set()
+    };
+    
+    return tools;
   } catch (error) {
     console.error('Error loading custom tools for MCP:', error);
-    return [];
+    return toolsCache.tools; // Return cached tools on error
+  }
+}
+
+// Dynamic tool registration function
+async function registerCustomTools(server: any, forceReload = false) {
+  const customTools = await loadCustomTools(forceReload);
+  
+  customTools.forEach((tool: CustomTool) => {
+    try {
+      // Skip if already registered (unless force reloading)
+      if (!forceReload && toolsCache.registered.has(tool.name)) {
+        return;
+      }
+      
+      // Combine input and query schemas for the tool parameters
+      const allParams = {
+        ...buildZodSchema(tool.inputSchema),
+        ...buildZodSchema(tool.querySchema)
+      };
+
+      // Register the custom tool
+      server.tool(
+        tool.name,
+        tool.description || `Custom tool: ${tool.name}`,
+        allParams,
+        async (params: Record<string, unknown>) => {
+          // Reload tools before executing if cache is stale
+          const now = Date.now();
+          if (toolsCache.timestamp === 0 || (now - toolsCache.timestamp) >= CACHE_DURATION) {
+            await registerCustomTools(server, true);
+          }
+          
+          // Find the current tool definition (might have been updated)
+          const currentTools = await loadCustomTools();
+          const currentTool = currentTools.find(t => t.name === tool.name) || tool;
+          
+          if (currentTool.customType === 'api') {
+            return await executeApiTool(currentTool, params);
+          } else {
+            return await executeCustomLogic(currentTool, params);
+          }
+        }
+      );
+      
+      // Mark as registered
+      toolsCache.registered.add(tool.name);
+      console.log(`✅ Registered custom tool: ${tool.name} (${tool.customType})`);
+    } catch (error) {
+      console.error(`❌ Failed to register custom tool ${tool.name}:`, error);
+    }
+  });
+  
+  if (customTools.length > 0) {
+    console.log(`🛠️ Loaded ${customTools.length} custom tools into MCP server`);
   }
 }
 
 const handler = createMcpHandler(
   async (server) => {
-    // Load and register custom tools
-    const customTools = await loadCustomTools();
-    
-    customTools.forEach((tool: CustomTool) => {
-      try {
-        // Combine input and query schemas for the tool parameters
-        const allParams = {
-          ...buildZodSchema(tool.inputSchema),
-          ...buildZodSchema(tool.querySchema)
-        };
+    // Register custom tools with dynamic loading support
+    await registerCustomTools(server);
 
-        // Register the custom tool
-        server.tool(
-          tool.name,
-          tool.description || `Custom tool: ${tool.name}`,
-          allParams,
-          async (params) => {
-            if (tool.customType === 'api') {
-              return await executeApiTool(tool, params);
-            } else {
-              return await executeCustomLogic(tool, params);
-            }
-          }
-        );
-        
-        console.log(`✅ Registered custom tool: ${tool.name} (${tool.customType})`);
-      } catch (error) {
-        console.error(`❌ Failed to register custom tool ${tool.name}:`, error);
+    // Tool to manually refresh custom tools cache
+    server.tool(
+      "refresh_custom_tools",
+      "Refresh the cache of custom tools to pick up newly added tools",
+      {},
+      async () => {
+        try {
+          // Force invalidate cache and reload
+          toolsCache.timestamp = 0;
+          toolsCache.registered.clear();
+          
+          await registerCustomTools(server, true);
+          const currentTools = await loadCustomTools(true);
+          
+          return {
+            content: [{
+              type: "text",
+              text: `🔄 Custom tools cache refreshed successfully!\n📊 Currently loaded: ${currentTools.length} custom tools\n\n${currentTools.length > 0 ? currentTools.map(t => `• ${t.name} (${t.customType || 'normal'})`).join('\n') : 'No custom tools found.'}`
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: `❌ Failed to refresh tools cache: ${error instanceof Error ? error.message : 'Unknown error'}`
+            }]
+          };
+        }
       }
-    });
+    );
 
-    if (customTools.length > 0) {
-      console.log(`🛠️ Loaded ${customTools.length} custom tools into MCP server`);
-    }
     // URL Shortener/Validator
     server.tool(
       "url_validator",

@@ -88,6 +88,18 @@ export async function getCustomTools(): Promise<Tool[]> {
   }
 }
 
+// Refresh MCP server tools cache
+async function refreshMcpTools(): Promise<void> {
+  try {
+    // With the reduced cache duration (5 seconds), tools will be automatically
+    // refreshed on the next MCP tool execution. No need for complex refresh logic.
+    console.log('✅ MCP tools will refresh automatically within 5 seconds');
+  } catch (error) {
+    console.warn('⚠️ Error in refresh function:', error);
+    // Don't throw error as this is not critical for the UI operation
+  }
+}
+
 // Add a custom tool - handles both localStorage and database modes
 export async function addCustomTool(tool: Tool): Promise<void> {
   const isDbMode = await isDatabaseMode();
@@ -115,6 +127,9 @@ export async function addCustomTool(tool: Tool): Promise<void> {
     tools.push({ ...tool, isCustom: true });
     saveToLocalStorage(tools);
   }
+  
+  // Tools will refresh automatically within 5 seconds
+  refreshMcpTools();
 }
 
 // Update a custom tool - handles both localStorage and database modes
@@ -147,6 +162,9 @@ export async function updateCustomTool(oldName: string, tool: Tool): Promise<voi
       saveToLocalStorage(tools);
     }
   }
+  
+  // Tools will refresh automatically within 5 seconds
+  refreshMcpTools();
 }
 
 // Delete a custom tool - handles both localStorage and database modes
@@ -172,6 +190,9 @@ export async function deleteCustomTool(toolName: string): Promise<void> {
     const filtered = tools.filter(t => t.name !== toolName);
     saveToLocalStorage(filtered);
   }
+  
+  // Tools will refresh automatically within 5 seconds
+  refreshMcpTools();
 }
 
 // Get storage information - correctly reports database status

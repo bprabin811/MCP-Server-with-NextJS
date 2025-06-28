@@ -55,6 +55,8 @@ import ParameterBuilder from './ParameterBuilder';
 export default function ToolManagerModal({ onClose, onAddTool, customTools, onDeleteTool, onEditTool, storageInfo }: ToolManagerModalProps) {
   const [activeTab, setActiveTab] = useState<'list' | 'add'>('list');
   const [editingTool, setEditingTool] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [toolToDelete, setToolToDelete] = useState<string | null>(null);
   const [newTool, setNewTool] = useState({
     name: '',
     description: '',
@@ -158,6 +160,19 @@ export default function ToolManagerModal({ onClose, onAddTool, customTools, onDe
     });
     setEditingTool(tool.name);
     setActiveTab('add');
+  };
+
+  const handleDeleteWithWarning = (toolName: string) => {
+    setToolToDelete(toolName);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = () => {
+    if (toolToDelete) {
+      onDeleteTool(toolToDelete);
+      setShowDeleteModal(false);
+      setToolToDelete(null);
+    }
   };
 
   const loadTemplate = (template: 'text_processor' | 'calculator' | 'data_formatter') => {
@@ -390,7 +405,7 @@ return {
                           </svg>
                         </button>
                         <button
-                          onClick={() => onDeleteTool(tool.name)}
+                          onClick={() => handleDeleteWithWarning(tool.name)}
                           className="text-red-400 hover:text-red-600 transition-colors"
                           title="Delete tool"
                         >
@@ -511,6 +526,33 @@ return {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/20 bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">Confirm Delete</h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to delete this tool? <br />
+              Note: You'll need to restart the server for the tool to be completely unregistered from MCP server.
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 } 

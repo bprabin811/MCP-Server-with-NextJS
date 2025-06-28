@@ -65,6 +65,7 @@ export default function Home() {
   const [showToolManager, setShowToolManager] = useState(false);
   const [customTools, setCustomTools] = useState<Tool[]>([]);
   const [storageInfo, setStorageInfo] = useState<{ mode: 'localStorage' | 'database'; isDatabase: boolean }>({ mode: 'localStorage', isDatabase: false });
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     async function initializeApp() {
@@ -399,6 +400,49 @@ export default function Home() {
     }
   };
 
+  const refreshAllTools = async () => {
+    if (refreshing) return; // Prevent multiple simultaneous refreshes
+    
+    try {
+      setRefreshing(true);
+      setError(null);
+      
+      // Refresh storage information
+      const info = await getStorageInfo();
+      setStorageInfo(info);
+
+      // Refresh custom tools
+      const customToolsData = await getCustomTools();
+      setCustomTools(customToolsData);
+
+      // Refresh server tools
+      const client = await setupClient();
+      
+      // Try to refresh the MCP custom tools cache first
+      try {
+        await client.callTool({
+          name: 'refresh_custom_tools',
+          arguments: {}
+        });
+        console.log('✅ MCP custom tools cache refreshed');
+      } catch (mcpError) {
+        console.warn('⚠️ Could not refresh MCP tools cache:', mcpError);
+        // Continue anyway as this is not critical
+      }
+      
+      const serverTools = await client.listTools();
+      setAllTools(serverTools as { tools: unknown[] });
+
+      console.log('✅ All tools refreshed successfully');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      setError(`Failed to refresh tools: ${errorMessage}`);
+      console.error('Error refreshing tools:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const renderFormField = (key: string, schema: ParameterSchema, required: boolean = false) => {
     const { type, description, enum: enumValues, minimum, maximum, default: defaultValue } = schema;
     
@@ -502,8 +546,31 @@ export default function Home() {
             {/* Tools List - Left Panel */}
             <div className="lg:col-span-1 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
               <div className="p-4 border-b-2 border-gray-200">
-                <h2 className="text-lg font-semibold text-gray-800">Available Tools</h2>
-                <p className="text-sm text-gray-600">Click on a tool to use it</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-800">Available Tools</h2>
+                    <p className="text-sm text-gray-600">Click on a tool to use it</p>
+                  </div>
+                  <button
+                    onClick={refreshAllTools}
+                    disabled={refreshing}
+                    className={`inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium transition-all duration-200 ${
+                      refreshing 
+                        ? 'text-gray-400 cursor-not-allowed' 
+                        : 'text-gray-700 hover:bg-gray-50 hover:border-gray-400'
+                    }`}
+                    title={refreshing ? "Refreshing tools..." : "Refresh all tools"}
+                  >
+                    <svg 
+                      className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} 
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </button>
+                </div>
               </div>
               <div className="overflow-y-auto h-full pb-24">
                 {combinedTools.tools && combinedTools.tools.length > 0 ? (
