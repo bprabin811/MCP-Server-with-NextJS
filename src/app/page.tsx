@@ -64,7 +64,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [showToolManager, setShowToolManager] = useState(false);
   const [customTools, setCustomTools] = useState<Tool[]>([]);
-  const [storageInfo, setStorageInfo] = useState<{ mode: 'localStorage'; isDatabase: boolean }>({ mode: 'localStorage', isDatabase: false });
+  const [storageInfo, setStorageInfo] = useState<{ mode: 'localStorage' | 'database'; isDatabase: boolean }>({ mode: 'localStorage', isDatabase: false });
 
   useEffect(() => {
     async function initializeApp() {
@@ -94,10 +94,7 @@ export default function Home() {
 
   // Combine server tools with custom tools
   const combinedTools = {
-    tools: [
-      ...(allTools?.tools || []).map(tool => tool as Tool),
-      ...customTools
-    ]
+    tools: allTools?.tools || []
   };
 
   const handleToolSelect = (tool: Tool) => {
