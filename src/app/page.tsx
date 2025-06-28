@@ -94,7 +94,10 @@ export default function Home() {
 
   // Combine server tools with custom tools
   const combinedTools = {
-    tools: allTools?.tools || []
+    tools: [
+      ...(allTools?.tools || []).map(tool => tool as Tool),
+      // ...customTools
+    ]
   };
 
   const handleToolSelect = (tool: Tool) => {
