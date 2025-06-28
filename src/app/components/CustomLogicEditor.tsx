@@ -52,7 +52,7 @@ return greeting + info + "!";
             <li>• <strong>Console:</strong> <code className="bg-gray-200 px-1 rounded">console.log()</code>, <code className="bg-gray-200 px-1 rounded">console.error()</code></li>
             <li>• <strong>Utilities:</strong> <code className="bg-gray-200 px-1 rounded">JSON</code>, <code className="bg-gray-200 px-1 rounded">Math</code>, <code className="bg-gray-200 px-1 rounded">Date</code>, <code className="bg-gray-200 px-1 rounded">RegExp</code></li>
             <li>• <strong>Encoding:</strong> <code className="bg-gray-200 px-1 rounded">btoa()</code>, <code className="bg-gray-200 px-1 rounded">atob()</code>, <code className="bg-gray-200 px-1 rounded">encodeURIComponent()</code></li>
-            <li>• <strong>Return:</strong> String, Object, or MCP format with content array</li>
+            <li>• <strong>Return:</strong> MCP format with content array to access it from the client</li>
           </ul>
         </div>
 

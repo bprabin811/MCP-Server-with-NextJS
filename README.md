@@ -41,6 +41,21 @@ Create a `.env.local` file in the root directory:
 ```env
 # Optional: Redis URL for session management
 REDIS_URL=redis://localhost:6379
+
+# Database Configuration for Custom Tools
+# Set USEDB to 'true' to enable database storage for custom tools
+# If 'false' or not set, tools will be stored in localStorage
+USEDB=false
+
+# PostgreSQL Database URL (required when USEDB=true)
+# Format: postgresql://username:password@host:port/database
+DATABASE_URL=postgresql://username:password@localhost:5432/mcp_tools
+
+# Examples for different hosting providers:
+# Vercel Postgres: postgres://username:password@region-pooler.aws.neon.tech/database
+# Supabase: postgresql://postgres:password@project.supabase.co:5432/postgres
+# Railway: postgresql://postgres:password@containers.railway.app:5432/railway
+# Heroku: postgres://user:password@host:port/database
 ```
 
 ### MCP Client Configuration
@@ -75,6 +90,39 @@ mcp-nextjs/
 ├── package.json
 └── README.md
 ```
+
+## 🛠️ Custom Tools & Database Storage
+
+This application supports creating custom tools through the web interface. Custom tools can be stored in two ways:
+
+### Local Storage Mode (Default)
+- Custom tools are stored in browser localStorage
+- Tools are specific to each browser/client
+- No database setup required
+- Suitable for development and single-user scenarios
+
+### Database Mode (Production)
+- Custom tools are stored in PostgreSQL database
+- Tools are shared across all clients and persist between sessions
+- Requires database setup
+- Recommended for production deployments
+
+### Enabling Database Storage
+
+1. **Set up a PostgreSQL database** (e.g., using Supabase, Vercel Postgres, or Railway)
+
+2. **Configure environment variables:**
+   ```env
+   USEDB=true
+   DATABASE_URL=postgresql://username:password@host:port/database
+   ```
+
+3. **The database table will be created automatically** when the application starts
+
+### Custom Tool Types
+
+- **Normal Tools**: Execute custom JavaScript logic
+- **API Tools**: Make HTTP requests to external APIs with configurable parameters
 
 ## 🔌 MCP Integration
 

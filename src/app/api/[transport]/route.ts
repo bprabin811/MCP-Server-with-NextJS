@@ -1,9 +1,374 @@
 import { createMcpHandler } from "@vercel/mcp-adapter";
 import { z } from "zod";
 import crypto from 'crypto';
+import { isDatabaseEnabled, getToolsFromDatabase } from '@/lib/database';
+
+// Types for custom tools
+interface ParameterSchema {
+  type: string;
+  description?: string;
+  enum?: string[];
+  minimum?: number;
+  maximum?: number;
+  default?: string | number | boolean;
+}
+
+interface CustomTool {
+  name: string;
+  description?: string;
+  inputSchema?: {
+    type: string;
+    properties?: Record<string, ParameterSchema>;
+    required?: string[];
+  };
+  querySchema?: {
+    type: string;
+    properties?: Record<string, ParameterSchema>;
+    required?: string[];
+  };
+  isCustom?: boolean;
+  customType?: 'normal' | 'api';
+  apiConfig?: {
+    url: string;
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+    headers?: Record<string, string>;
+  };
+  customLogic?: string;
+}
+
+// Convert parameter schema to Zod schema
+function parameterToZodSchema(param: ParameterSchema): z.ZodType<unknown> {
+  let schema: z.ZodType<unknown>;
+  
+  switch (param.type) {
+    case 'string':
+      schema = z.string();
+      if (param.enum) {
+        schema = z.enum(param.enum as [string, ...string[]]);
+      }
+      break;
+    case 'number':
+      schema = z.number();
+      if (param.minimum !== undefined) {
+        schema = (schema as z.ZodNumber).min(param.minimum);
+      }
+      if (param.maximum !== undefined) {
+        schema = (schema as z.ZodNumber).max(param.maximum);
+      }
+      break;
+    case 'integer':
+      schema = z.number().int();
+      if (param.minimum !== undefined) {
+        schema = (schema as z.ZodNumber).min(param.minimum);
+      }
+      if (param.maximum !== undefined) {
+        schema = (schema as z.ZodNumber).max(param.maximum);
+      }
+      break;
+    case 'boolean':
+      schema = z.boolean();
+      break;
+    default:
+      schema = z.string();
+  }
+  
+  if (param.description) {
+    schema = schema.describe(param.description);
+  }
+  
+  if (param.default !== undefined) {
+    schema = schema.default(param.default);
+  }
+  
+  return schema;
+}
+
+// Convert custom tool schema to Zod object
+function buildZodSchema(toolSchema?: { properties?: Record<string, ParameterSchema>; required?: string[] }): Record<string, z.ZodType<unknown>> {
+  if (!toolSchema?.properties) return {};
+  
+  const zodSchema: Record<string, z.ZodType<unknown>> = {};
+  
+  for (const [key, param] of Object.entries(toolSchema.properties)) {
+    let schema = parameterToZodSchema(param);
+    
+    // Make optional if not in required array
+    if (!toolSchema.required?.includes(key)) {
+      schema = schema.optional();
+    }
+    
+    zodSchema[key] = schema;
+  }
+  
+  return zodSchema;
+}
+
+// Execute custom logic tool
+async function executeCustomLogic(tool: CustomTool, params: Record<string, unknown>) {
+  try {
+    if (!tool.customLogic || tool.customLogic.trim() === '') {
+      return {
+        content: [{
+          type: "text",
+          text: `🛠️ Custom Tool "${tool.name}" executed with parameters:\n${JSON.stringify(params, null, 2)}\n\n⚠️ No custom logic defined for this tool.`
+        }]
+      };
+    }
+
+    // Create a safe execution environment
+    const safeGlobals = {
+      console: {
+        log: (...args: unknown[]) => console.log(`[${tool.name}]`, ...args),
+        error: (...args: unknown[]) => console.error(`[${tool.name}]`, ...args),
+        warn: (...args: unknown[]) => console.warn(`[${tool.name}]`, ...args)
+      },
+      JSON,
+      Math,
+      Date,
+      String,
+      Number,
+      Boolean,
+      Array,
+      Object,
+      RegExp,
+      parseInt,
+      parseFloat,
+      isNaN,
+      isFinite,
+      encodeURIComponent,
+      decodeURIComponent,
+      btoa,
+      atob
+    };
+
+    // Wrap the user code in a function
+    const functionCode = `
+      return (function(params, globals) {
+        // Make globals available
+        ${Object.keys(safeGlobals).map(key => `const ${key} = globals.${key};`).join('\n')}
+        
+        // User's custom logic
+        ${tool.customLogic}
+      })(params, globals);
+    `;
+
+    // Execute the user's code
+    const userFunction = new Function('params', 'globals', functionCode);
+    const result = await userFunction(params, safeGlobals);
+
+    // Format the result
+    if (typeof result === 'string') {
+      return {
+        content: [{
+          type: "text",
+          text: result
+        }]
+      };
+    } else if (result && typeof result === 'object') {
+      // If the result has the MCP format, use it directly
+      if (result.content && Array.isArray(result.content)) {
+        return result;
+      } else {
+        // Otherwise, stringify the object
+        return {
+          content: [{
+            type: "text",
+            text: `🛠️ ${tool.name} Result:\n${JSON.stringify(result, null, 2)}`
+          }]
+        };
+      }
+    } else {
+      return {
+        content: [{
+          type: "text",
+          text: `🛠️ ${tool.name} Result: ${String(result)}`
+        }]
+      };
+    }
+  } catch (error) {
+    return {
+      content: [{
+        type: "text",
+        text: `❌ Error executing custom logic: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease check your JavaScript code for syntax errors.`
+      }]
+    };
+  }
+}
+
+// Execute API tool
+async function executeApiTool(tool: CustomTool, params: Record<string, unknown>) {
+  if (!tool.apiConfig) {
+    throw new Error('API configuration missing');
+  }
+  
+  const { url, method, headers = {} } = tool.apiConfig;
+  let finalUrl = url;
+  let body: string | undefined = undefined;
+
+  // Separate query parameters and body parameters
+  const queryParams: Record<string, string | number | boolean> = {};
+  const bodyParams: Record<string, string | number | boolean> = {};
+
+  // Get query parameter keys from querySchema
+  const queryKeys = tool.querySchema?.properties ? Object.keys(tool.querySchema.properties) : [];
+  // Get body parameter keys from inputSchema  
+  const bodyKeys = tool.inputSchema?.properties ? Object.keys(tool.inputSchema.properties) : [];
+
+  // Helper function to check if value is valid parameter type
+  const isValidParamValue = (value: unknown): value is string | number | boolean => {
+    return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
+  };
+
+  // Distribute parameters based on their schema definitions
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== '' && isValidParamValue(value)) {
+      if (queryKeys.includes(key)) {
+        queryParams[key] = value;
+      } else if (bodyKeys.includes(key)) {
+        bodyParams[key] = value;
+      } else {
+        // If not explicitly defined in either schema, use legacy behavior:
+        // Query params for GET, body params for other methods
+        if (method === 'GET') {
+          queryParams[key] = value;
+        } else {
+          bodyParams[key] = value;
+        }
+      }
+    }
+  });
+
+  // Clear existing query parameters from URL to avoid duplication
+  const baseUrl = url.split('?')[0];
+  finalUrl = baseUrl;
+
+  // Add query parameters to URL
+  if (Object.keys(queryParams).length > 0) {
+    const urlParams = new URLSearchParams();
+    Object.entries(queryParams).forEach(([key, value]) => {
+      urlParams.set(key, String(value));
+    });
+    finalUrl += '?' + urlParams.toString();
+  }
+
+  // Add body parameters (only for non-GET requests if there are body params)
+  if (method !== 'GET' && Object.keys(bodyParams).length > 0) {
+    body = JSON.stringify(bodyParams);
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const response = await fetch(finalUrl, {
+    method,
+    headers,
+    body
+  });
+
+  const responseText = await response.text();
+  let responseJson;
+  try {
+    responseJson = JSON.parse(responseText);
+  } catch {
+    responseJson = responseText;
+  }
+
+  // Return API response in MCP format
+  if (!response.ok) {
+    return {
+      content: [{
+        type: "text",
+        text: `API Error ${response.status}: ${response.statusText}\n${typeof responseJson === 'string' ? responseJson : JSON.stringify(responseJson, null, 2)}`
+      }],
+      isError: true
+    };
+  }
+
+  // If response is a string, return as text
+  if (typeof responseJson === 'string') {
+    return {
+      content: [{
+        type: "text",
+        text: responseJson
+      }]
+    };
+  }
+
+  // If response is an object/array, return as structured data
+  if (typeof responseJson === 'object' && responseJson !== null) {
+    // Check if it's already in MCP format
+    if (responseJson.content && Array.isArray(responseJson.content)) {
+      return responseJson;
+    }
+
+    // For JSON objects, return the raw data as text for proper display
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify(responseJson, null, 2)
+      }]
+    };
+  }
+
+  // For other types, convert to string
+  return {
+    content: [{
+      type: "text", 
+      text: String(responseJson)
+    }]
+  };
+}
+
+// Load and register custom tools
+async function loadCustomTools() {
+  try {
+    if (isDatabaseEnabled()) {
+      return await getToolsFromDatabase();
+    } else {
+      // In MCP server context, we can't access localStorage directly
+      // Custom tools will only be available if database is enabled
+      return [];
+    }
+  } catch (error) {
+    console.error('Error loading custom tools for MCP:', error);
+    return [];
+  }
+}
 
 const handler = createMcpHandler(
-  (server) => {
+  async (server) => {
+    // Load and register custom tools
+    const customTools = await loadCustomTools();
+    
+    customTools.forEach((tool: CustomTool) => {
+      try {
+        // Combine input and query schemas for the tool parameters
+        const allParams = {
+          ...buildZodSchema(tool.inputSchema),
+          ...buildZodSchema(tool.querySchema)
+        };
+
+        // Register the custom tool
+        server.tool(
+          tool.name,
+          tool.description || `Custom tool: ${tool.name}`,
+          allParams,
+          async (params) => {
+            if (tool.customType === 'api') {
+              return await executeApiTool(tool, params);
+            } else {
+              return await executeCustomLogic(tool, params);
+            }
+          }
+        );
+        
+        console.log(`✅ Registered custom tool: ${tool.name} (${tool.customType})`);
+      } catch (error) {
+        console.error(`❌ Failed to register custom tool ${tool.name}:`, error);
+      }
+    });
+
+    if (customTools.length > 0) {
+      console.log(`🛠️ Loaded ${customTools.length} custom tools into MCP server`);
+    }
     // URL Shortener/Validator
     server.tool(
       "url_validator",

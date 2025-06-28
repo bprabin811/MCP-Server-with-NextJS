@@ -2,6 +2,13 @@
 import { setupClient } from "./utils/clientUtils";
 import { useEffect, useState } from "react";
 import ToolManagerModal from "./components/ToolManagerModal";
+import { 
+  getCustomTools, 
+  addCustomTool as saveCustomTool, 
+  deleteCustomTool as removeCustomTool, 
+  updateCustomTool,
+  getStorageInfo 
+} from "./utils/toolStorage";
 
 interface ParameterSchema {
   type: string;
@@ -57,31 +64,32 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [showToolManager, setShowToolManager] = useState(false);
   const [customTools, setCustomTools] = useState<Tool[]>([]);
+  const [storageInfo, setStorageInfo] = useState<{ mode: 'localStorage'; isDatabase: boolean }>({ mode: 'localStorage', isDatabase: false });
 
   useEffect(() => {
-    // Load custom tools from localStorage
-    const savedTools = localStorage.getItem('customTools');
-    if (savedTools) {
+    async function initializeApp() {
       try {
-        setCustomTools(JSON.parse(savedTools));
-      } catch (error) {
-        console.error('Error loading custom tools:', error);
-      }
-    }
+        // Get storage information
+        const info = await getStorageInfo();
+        setStorageInfo(info);
 
-    async function fetchTools() {
-      try {
+        // Load custom tools using the storage utility
+        const customToolsData = await getCustomTools();
+        setCustomTools(customToolsData);
+
+        // Load server tools
         const client = await setupClient();
         const serverTools = await client.listTools();
         setAllTools(serverTools as { tools: unknown[] });
         setError(null); // Clear any previous errors
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
-        setError(`Failed to fetch tools: ${errorMessage}`);
-        console.error('Error fetching tools:', err);
+        setError(`Failed to initialize app: ${errorMessage}`);
+        console.error('Error initializing app:', err);
       }
     }
-    fetchTools();
+    
+    initializeApp();
   }, []);
 
   // Combine server tools with custom tools
@@ -340,38 +348,55 @@ export default function Home() {
     }
   };
 
-  const addCustomTool = (tool: Tool) => {
-    const newCustomTools = [...customTools, { ...tool, isCustom: true }];
-    setCustomTools(newCustomTools);
-    localStorage.setItem('customTools', JSON.stringify(newCustomTools));
-    setShowToolManager(false);
-  };
-
-  const deleteCustomTool = (toolName: string) => {
-    const newCustomTools = customTools.filter(tool => tool.name !== toolName);
-    setCustomTools(newCustomTools);
-    localStorage.setItem('customTools', JSON.stringify(newCustomTools));
-    if (selectedTool?.name === toolName) {
-      setSelectedTool(null);
-      setFormData({});
-      setResult(null);
+  const addCustomTool = async (tool: Tool) => {
+    try {
+      await saveCustomTool(tool);
+      // Refresh the tools list
+      const updatedTools = await getCustomTools();
+      setCustomTools(updatedTools);
+      setShowToolManager(false);
+    } catch (error) {
+      console.error('Error adding custom tool:', error);
+      setError('Failed to save custom tool');
     }
   };
 
-  const editCustomTool = (oldName: string, updatedTool: Tool) => {
-    const newCustomTools = customTools.map(tool => 
-      tool.name === oldName ? { ...updatedTool, isCustom: true } : tool
-    );
-    setCustomTools(newCustomTools);
-    localStorage.setItem('customTools', JSON.stringify(newCustomTools));
-    
-    // Update selected tool if it's the one being edited
-    if (selectedTool?.name === oldName) {
-      setSelectedTool({ ...updatedTool, isCustom: true });
-      setFormData({});
-      setResult(null);
+  const deleteCustomTool = async (toolName: string) => {
+    try {
+      await removeCustomTool(toolName);
+      // Refresh the tools list
+      const updatedTools = await getCustomTools();
+      setCustomTools(updatedTools);
+      
+      if (selectedTool?.name === toolName) {
+        setSelectedTool(null);
+        setFormData({});
+        setResult(null);
+      }
+    } catch (error) {
+      console.error('Error deleting custom tool:', error);
+      setError('Failed to delete custom tool');
     }
-    setShowToolManager(false);
+  };
+
+  const editCustomTool = async (oldName: string, updatedTool: Tool) => {
+    try {
+      await updateCustomTool(oldName, updatedTool);
+      // Refresh the tools list
+      const updatedTools = await getCustomTools();
+      setCustomTools(updatedTools);
+      
+      // Update selected tool if it's the one being edited
+      if (selectedTool?.name === oldName) {
+        setSelectedTool({ ...updatedTool, isCustom: true });
+        setFormData({});
+        setResult(null);
+      }
+      setShowToolManager(false);
+    } catch (error) {
+      console.error('Error updating custom tool:', error);
+      setError('Failed to update custom tool');
+    }
   };
 
   const renderFormField = (key: string, schema: ParameterSchema, required: boolean = false) => {
@@ -476,7 +501,7 @@ export default function Home() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-120px)]">
             {/* Tools List - Left Panel */}
             <div className="lg:col-span-1 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
-              <div className="p-4 bg-blue-50 border-b border-gray-200">
+              <div className="p-4 border-b-2 border-gray-200">
                 <h2 className="text-lg font-semibold text-gray-800">Available Tools</h2>
                 <p className="text-sm text-gray-600">Click on a tool to use it</p>
               </div>
@@ -512,7 +537,7 @@ export default function Home() {
             <div className="lg:col-span-2 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
               {selectedTool ? (
                 <div className="h-full flex flex-col">
-                  <div className="p-4 bg-blue-50 border-b border-gray-200">
+                  <div className="p-4 border-b-2 border-gray-200">
                     <h2 className="text-lg font-semibold text-gray-800">{selectedTool.name}</h2>
                     <p className="text-sm text-gray-600">{selectedTool.description}</p>
                   </div>
@@ -726,6 +751,7 @@ export default function Home() {
           customTools={customTools}
           onDeleteTool={deleteCustomTool}
           onEditTool={editCustomTool}
+          storageInfo={storageInfo}
         />
       )}
     </div>
