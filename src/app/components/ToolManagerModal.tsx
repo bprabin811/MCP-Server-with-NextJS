@@ -534,7 +534,7 @@ return {
             <h3 className="text-lg font-medium text-gray-900 mb-4">Confirm Delete</h3>
             <p className="text-gray-600 mb-6">
               Are you sure you want to delete this tool? <br />
-              Note: You'll need to restart the server for the tool to be completely unregistered from MCP server.
+              Note: You&apos;ll need to restart the server for the tool to be completely unregistered from MCP server.
             </p>
             <div className="flex justify-end space-x-3">
               <button

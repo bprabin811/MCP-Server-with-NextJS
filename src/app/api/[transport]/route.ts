@@ -50,13 +50,6 @@ let toolsCache: {
 // Cache duration in milliseconds (5 seconds for more responsive updates)
 const CACHE_DURATION = 5 * 1000;
 
-// Function to invalidate the tools cache
-export function invalidateToolsCache() {
-  toolsCache.timestamp = 0;
-  toolsCache.registered.clear();
-  console.log('🔄 Tools cache invalidated');
-}
-
 // Convert parameter schema to Zod schema
 function parameterToZodSchema(param: ParameterSchema): z.ZodType<unknown> {
   let schema: z.ZodType<unknown>;
@@ -372,6 +365,7 @@ async function loadCustomTools(forceReload = false) {
 }
 
 // Dynamic tool registration function
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function registerCustomTools(server: any, forceReload = false) {
   const customTools = await loadCustomTools(forceReload);
   
