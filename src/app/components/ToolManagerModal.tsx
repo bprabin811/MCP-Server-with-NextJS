@@ -24,11 +24,16 @@ interface Tool {
     properties?: Record<string, ParameterSchema>;
     required?: string[];
   };
+  querySchema?: {
+    type: string;
+    properties?: Record<string, ParameterSchema>;
+    required?: string[];
+  };
   isCustom?: boolean;
   customType?: 'normal' | 'api';
   apiConfig?: {
     url: string;
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
     headers?: Record<string, string>;
   };
   customLogic?: string;
@@ -56,10 +61,15 @@ export default function ToolManagerModal({ onClose, onAddTool, customTools, onDe
     customLogic: '',
     apiConfig: {
       url: '',
-      method: 'GET' as 'GET' | 'POST' | 'PUT' | 'DELETE',
+      method: 'GET' as 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
       headers: {} as Record<string, string>
     },
     inputSchema: {
+      type: 'object',
+      properties: {} as Record<string, ParameterSchema>,
+      required: [] as string[]
+    },
+    querySchema: {
       type: 'object',
       properties: {} as Record<string, ParameterSchema>,
       required: [] as string[]
@@ -82,6 +92,7 @@ export default function ToolManagerModal({ onClose, onAddTool, customTools, onDe
       description: newTool.description,
       customType: newTool.customType,
       inputSchema: Object.keys(newTool.inputSchema.properties).length > 0 ? newTool.inputSchema : undefined,
+      querySchema: Object.keys(newTool.querySchema.properties).length > 0 ? newTool.querySchema : undefined,
       apiConfig: newTool.customType === 'api' ? newTool.apiConfig : undefined,
       customLogic: newTool.customType === 'normal' ? newTool.customLogic : undefined
     };
@@ -111,6 +122,11 @@ export default function ToolManagerModal({ onClose, onAddTool, customTools, onDe
         type: 'object',
         properties: {},
         required: []
+      },
+      querySchema: {
+        type: 'object',
+        properties: {},
+        required: []
       }
     });
     setEditingTool(null);
@@ -132,6 +148,11 @@ export default function ToolManagerModal({ onClose, onAddTool, customTools, onDe
         type: 'object',
         properties: tool.inputSchema?.properties || {},
         required: tool.inputSchema?.required || []
+      },
+      querySchema: {
+        type: 'object',
+        properties: tool.querySchema?.properties || {},
+        required: tool.querySchema?.required || []
       }
     });
     setEditingTool(tool.name);
@@ -272,6 +293,21 @@ return {
         </div>
 
         <div className="p-6 overflow-y-auto max-h-[60vh]">
+          {/* custome tools are saved in local storage , to make accessable, please use database to store them*/}
+          <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-yellow-700">
+                  <strong>Note:</strong> Custom tools are currently stored in local storage. For production use, please implement a database solution to ensure data persistence and accessibility across clients.
+                </p>
+              </div>
+            </div>
+          </div>
           {activeTab === 'list' ? (
             <div className="space-y-4">
               {customTools.length === 0 ? (
@@ -397,11 +433,35 @@ return {
                 />
               )}
 
-              {/* Parameters */}
-              <ParameterBuilder 
-                inputSchema={newTool.inputSchema}
-                onSchemaChange={(schema: InputSchema) => setNewTool(prev => ({ ...prev, inputSchema: schema }))}
-              />
+              {/* Query Parameters (only for API tools) */}
+              {newTool.customType === 'api' && (
+                <div className="border border-gray-200 rounded-lg p-4 bg-blue-50">
+                  <h3 className="text-sm font-medium text-gray-700 mb-3">🔗 Query Parameters (URL Parameters)</h3>
+                  <p className="text-xs text-gray-600 mb-3">
+                    Parameters that will be added to the URL as query string (e.g., ?limit=10&offset=0)
+                  </p>
+                  <ParameterBuilder 
+                    inputSchema={newTool.querySchema}
+                    onSchemaChange={(schema: InputSchema) => setNewTool(prev => ({ ...prev, querySchema: schema }))}
+                  />
+                </div>
+              )}
+
+              {/* Body Parameters */}
+              <div className={`border border-gray-200 rounded-lg p-4 ${newTool.customType === 'api' ? 'bg-yellow-50' : 'bg-gray-50'}`}>
+                <h3 className="text-sm font-medium text-gray-700 mb-3">
+                  {newTool.customType === 'api' ? '📦 Body Parameters (Request Payload)' : '⚙️ Tool Parameters'}
+                </h3>
+                {newTool.customType === 'api' && (
+                  <p className="text-xs text-gray-600 mb-3">
+                    Parameters that will be sent in the request body (for POST/PUT/PATCH) or as URL parameters (for GET)
+                  </p>
+                )}
+                <ParameterBuilder 
+                  inputSchema={newTool.inputSchema}
+                  onSchemaChange={(schema: InputSchema) => setNewTool(prev => ({ ...prev, inputSchema: schema }))}
+                />
+              </div>
 
               {/* Submit Button */}
               <div className="flex justify-end space-x-3">

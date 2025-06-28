@@ -20,11 +20,16 @@ interface Tool {
     properties?: Record<string, ParameterSchema>;
     required?: string[];
   };
+  querySchema?: {
+    type: string;
+    properties?: Record<string, ParameterSchema>;
+    required?: string[];
+  };
   isCustom?: boolean;
   customType?: 'normal' | 'api';
   apiConfig?: {
     url: string;
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
     headers?: Record<string, string>;
   };
   customLogic?: string;
@@ -142,22 +147,76 @@ export default function Home() {
     let finalUrl = url;
     let body: string | undefined = undefined;
 
-    // Replace URL parameters for GET requests
-    if (method === 'GET') {
-      const urlParams = new URLSearchParams();
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== '') {
-          urlParams.append(key, String(value));
+    // Separate query parameters and body parameters
+    const queryParams: Record<string, string | number | boolean> = {};
+    const bodyParams: Record<string, string | number | boolean> = {};
+
+    // Get query parameter keys from querySchema
+    const queryKeys = tool.querySchema?.properties ? Object.keys(tool.querySchema.properties) : [];
+    // Get body parameter keys from inputSchema  
+    const bodyKeys = tool.inputSchema?.properties ? Object.keys(tool.inputSchema.properties) : [];
+
+    console.log('🔍 Debug Info:', {
+      allParams: params,
+      queryKeys,
+      bodyKeys
+    });
+
+    // Distribute parameters based on their schema definitions
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') {
+        if (queryKeys.includes(key)) {
+          // Only add to queryParams if not already exists (prevent duplicates)
+          if (!(key in queryParams)) {
+            queryParams[key] = value;
+          }
+        } else if (bodyKeys.includes(key)) {
+          // Only add to bodyParams if not already exists (prevent duplicates)
+          if (!(key in bodyParams)) {
+            bodyParams[key] = value;
+          }
+        } else {
+          // If not explicitly defined in either schema, use legacy behavior:
+          // Query params for GET, body params for other methods
+          if (method === 'GET') {
+            if (!(key in queryParams)) {
+              queryParams[key] = value;
+            }
+          } else {
+            if (!(key in bodyParams)) {
+              bodyParams[key] = value;
+            }
+          }
         }
-      });
-      if (urlParams.toString()) {
-        finalUrl += (url.includes('?') ? '&' : '?') + urlParams.toString();
       }
-    } else {
-      // For other methods, send as JSON body
-      body = JSON.stringify(params);
+    });
+
+    console.log('📊 After processing:', {
+      queryParams,
+      bodyParams
+    });
+
+    // Clear existing query parameters from URL to avoid duplication
+    const baseUrl = url.split('?')[0];
+    finalUrl = baseUrl;
+
+    // Add query parameters to URL
+    if (Object.keys(queryParams).length > 0) {
+      const urlParams = new URLSearchParams();
+      Object.entries(queryParams).forEach(([key, value]) => {
+        urlParams.set(key, String(value)); // Use set() instead of append() to prevent duplicates
+      });
+      finalUrl += '?' + urlParams.toString();
+    }
+
+    // Add body parameters (only for non-GET requests if there are body params)
+    if (method !== 'GET' && Object.keys(bodyParams).length > 0) {
+      body = JSON.stringify(bodyParams);
       headers['Content-Type'] = 'application/json';
     }
+
+    console.log('🌐 Final URL:', finalUrl);
+    console.log('📦 Final Body:', body);
 
     const response = await fetch(finalUrl, {
       method,
@@ -173,10 +232,19 @@ export default function Home() {
       responseJson = responseText;
     }
 
+    // Enhanced response with parameter breakdown
+    const paramInfo = [];
+    if (Object.keys(queryParams).length > 0) {
+      paramInfo.push(`🔗 Query Parameters: ${JSON.stringify(queryParams, null, 2)}`);
+    }
+    if (Object.keys(bodyParams).length > 0) {
+      paramInfo.push(`📦 Body Parameters: ${JSON.stringify(bodyParams, null, 2)}`);
+    }
+
     return {
       content: [{
         type: "text",
-        text: `🌐 API Response (${response.status} ${response.statusText}):\n${JSON.stringify(responseJson, null, 2)}`
+        text: `🌐 API Response (${response.status} ${response.statusText}):\n${paramInfo.length > 0 ? paramInfo.join('\n') + '\n\n' : ''}${JSON.stringify(responseJson, null, 2)}`
       }]
     };
   };
@@ -363,7 +431,7 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-gray-50">
       {/* Navigation Bar */}
       <nav className="bg-white shadow-md border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -372,7 +440,7 @@ export default function Home() {
             <div className="flex items-center">
               <div className="flex-shrink-0">
                 <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                  🛠️ MCP Utilities
+                  🛠️ MCP Utility Server
                 </h1>
               </div>
             </div>
@@ -389,7 +457,7 @@ export default function Home() {
                 Tool Manager
               </button>
               <a
-                href="https://github.com/modelcontextprotocol/servers"
+                href="https://github.com/bprabin811/MCP-Server-with-NextJS"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-all duration-200"
@@ -404,11 +472,11 @@ export default function Home() {
         </div>
       </nav>
 
-      <div className="max-w-7xl mx-auto p-4">
+      <div className="max-w-7xl mx-auto mt-12">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-120px)]">
             {/* Tools List - Left Panel */}
             <div className="lg:col-span-1 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
-              <div className="p-4 bg-gray-50 border-b border-gray-200">
+              <div className="p-4 bg-blue-50 border-b border-gray-200">
                 <h2 className="text-lg font-semibold text-gray-800">Available Tools</h2>
                 <p className="text-sm text-gray-600">Click on a tool to use it</p>
               </div>
@@ -444,29 +512,69 @@ export default function Home() {
             <div className="lg:col-span-2 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
               {selectedTool ? (
                 <div className="h-full flex flex-col">
-                  <div className="p-4 bg-gray-50 border-b border-gray-200">
+                  <div className="p-4 bg-blue-50 border-b border-gray-200">
                     <h2 className="text-lg font-semibold text-gray-800">{selectedTool.name}</h2>
                     <p className="text-sm text-gray-600">{selectedTool.description}</p>
                   </div>
                   
                   <div className="flex-1 overflow-y-auto p-4">
-                    {selectedTool.inputSchema?.properties ? (
-                      <form onSubmit={handleSubmit} className="space-y-4">
-                        {Object.entries(selectedTool.inputSchema.properties).map(([key, schema]: [string, ParameterSchema]) => {
-                          const isRequired = selectedTool.inputSchema?.required?.includes(key) || false;
-                          return (
-                            <div key={key}>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                {key}
-                                {isRequired && <span className="text-red-500 ml-1">*</span>}
-                              </label>
-                              {renderFormField(key, schema, isRequired)}
-                              {schema.description && (
-                                <p className="text-xs text-gray-500 mt-1">{schema.description}</p>
-                              )}
+                    {(selectedTool.querySchema?.properties || selectedTool.inputSchema?.properties) ? (
+                      <form onSubmit={handleSubmit} className="space-y-6">
+                        {/* Query Parameters Section */}
+                        {selectedTool.querySchema?.properties && selectedTool.isCustom && selectedTool.customType === 'api' && (
+                          <div className="border border-blue-200 rounded-lg p-4 bg-blue-50">
+                            <h3 className="text-sm font-semibold text-blue-800 mb-3 flex items-center">
+                              🔗 Query Parameters
+                              <span className="ml-2 text-xs bg-blue-200 text-blue-700 px-2 py-1 rounded">URL</span>
+                            </h3>
+                            <div className="space-y-4">
+                              {Object.entries(selectedTool.querySchema.properties).map(([key, schema]: [string, ParameterSchema]) => {
+                                const isRequired = selectedTool.querySchema?.required?.includes(key) || false;
+                                return (
+                                  <div key={`query-${key}`}>
+                                    <label className="block text-sm font-medium text-blue-700 mb-1">
+                                      {key}
+                                      {isRequired && <span className="text-red-500 ml-1">*</span>}
+                                    </label>
+                                    {renderFormField(key, schema, isRequired)}
+                                    {schema.description && (
+                                      <p className="text-xs text-blue-600 mt-1">{schema.description}</p>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
-                          );
-                        })}
+                          </div>
+                        )}
+
+                        {/* Body Parameters Section */}
+                        {selectedTool.inputSchema?.properties && (
+                          <div className={`border rounded-lg p-4 ${selectedTool.isCustom && selectedTool.customType === 'api' ? 'border-yellow-200 bg-yellow-50' : 'border-gray-200 bg-gray-50'}`}>
+                            <h3 className={`text-sm font-semibold mb-3 flex items-center ${selectedTool.isCustom && selectedTool.customType === 'api' ? 'text-yellow-800' : 'text-gray-800'}`}>
+                              {selectedTool.isCustom && selectedTool.customType === 'api' ? '📦 Body Parameters' : '⚙️ Tool Parameters'}
+                              {selectedTool.isCustom && selectedTool.customType === 'api' && (
+                                <span className="ml-2 text-xs bg-yellow-200 text-yellow-700 px-2 py-1 rounded">BODY</span>
+                              )}
+                            </h3>
+                            <div className="space-y-4">
+                              {Object.entries(selectedTool.inputSchema.properties).map(([key, schema]: [string, ParameterSchema]) => {
+                                const isRequired = selectedTool.inputSchema?.required?.includes(key) || false;
+                                return (
+                                  <div key={`body-${key}`}>
+                                    <label className={`block text-sm font-medium mb-1 ${selectedTool.isCustom && selectedTool.customType === 'api' ? 'text-yellow-700' : 'text-gray-700'}`}>
+                                      {key}
+                                      {isRequired && <span className="text-red-500 ml-1">*</span>}
+                                    </label>
+                                    {renderFormField(key, schema, isRequired)}
+                                    {schema.description && (
+                                      <p className={`text-xs mt-1 ${selectedTool.isCustom && selectedTool.customType === 'api' ? 'text-yellow-600' : 'text-gray-500'}`}>{schema.description}</p>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                         
                         <button
                           type="submit"
@@ -545,11 +653,68 @@ export default function Home() {
           </div>
         </div>
 
+      {/* Connection Guide */}
+      <div className="max-w-7xl mx-auto mt-12 p-4 shadow-lg rounded-lg bg-white">
+        <h2 className="text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2">
+          🔌 Connecting to Your MCP Server
+        </h2>
+        
+        <div className="space-y-4 text-sm text-gray-700">
+          <div>
+            <h3 className="font-medium text-gray-800 mb-2">Via stdio</h3>
+            <p className="mb-2">
+              Depending on the version of your client application, remote MCP&apos;s may need to use mcp-remote to proxy Streamable HTTP into stdio.
+            </p>
+          </div>
+          
+          <div>
+            <h3 className="font-medium text-gray-800 mb-2">Direct Connection (Recommended)</h3>
+            <p className="mb-2">
+              If your client supports it, it&apos;s recommended to connect to the Streamable HTTP endpoint directly such as:
+            </p>
+            <div className="bg-gray-100 rounded-md border border-gray-200 p-4 mt-2">
+              <pre className="text-xs text-gray-800 whitespace-pre-wrap overflow-x-auto">
+{`{
+  "mcpServers": {
+    "remote-mcp": {
+      "type": "sse",
+      "url": "https://mcp-server-with-next-js.vercel.app/api/mcp"
+    }
+  }
+}`}
+              </pre>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="font-medium text-gray-800 mb-2">Using mcp-remote (Alternative)</h3>
+            <p className="mb-2">
+              Due to client versions, and varying levels of support, you can list mcp-remote as the method for end users to connect to your MCP server.
+            </p>
+            <p className="mb-2">
+              The above set up snippet will then look like:
+            </p>
+            <div className="bg-gray-100 rounded-md border border-gray-200 p-4 mt-2">
+              <pre className="text-xs text-gray-800 whitespace-pre-wrap overflow-x-auto">
+{`"remote-example": {
+  "command": "npx",
+  "args": [
+    "mcp-remote",
+    "-y",
+    "http://localhost:3000/api/mcp" // this is your app/api/[transport]/route.ts
+  ]
+}`}
+              </pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Footer */}
-      <footer className="text-center mt-12 pt-8 border-t border-gray-200 text-gray-500">
+      <footer className="text-center my-12 pt-8 border-t border-gray-200 text-gray-500">
         <p className="text-lg">🚀 MCP Utility Server - Built with Next.js</p>
-        <p className="text-sm mt-2">
-          Validate • Convert • Generate • Transform • Secure
+        <p className="text-xs mt-4 text-gray-400">
+          Made by <a href="https://www.bprabin.com.np/" className="hover:text-gray-600 underline">Prabin Bhatt</a>
         </p>
       </footer>
 

@@ -3,7 +3,7 @@ import { useState } from "react";
 
 interface ApiConfig {
   url: string;
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
   headers: Record<string, string>;
 }
 
@@ -51,7 +51,7 @@ export default function ApiConfigEditor({ apiConfig, onConfigChange }: ApiConfig
             value={apiConfig.method}
             onChange={(e) => onConfigChange({
               ...apiConfig,
-              method: e.target.value as 'GET' | 'POST' | 'PUT' | 'DELETE'
+              method: e.target.value as 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
             })}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
@@ -59,6 +59,7 @@ export default function ApiConfigEditor({ apiConfig, onConfigChange }: ApiConfig
             <option value="POST">POST</option>
             <option value="PUT">PUT</option>
             <option value="DELETE">DELETE</option>
+            <option value="PATCH">PATCH</option>
           </select>
         </div>
         <div className="md:col-span-2">
