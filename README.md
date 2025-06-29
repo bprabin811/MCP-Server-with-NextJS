@@ -2,7 +2,11 @@
 
 A Next.js application that provides a comprehensive set of utility tools through the Model Context Protocol (MCP).
 
-## 🛠️ Installation
+<a href="https://mcp-server-with-next-js.vercel.app" target="_blank">
+    <img src="public/preview.png" alt="bg"></img>
+</a>
+
+🛠️ Installation
 
 1. **Clone the repository**
 
@@ -73,6 +77,26 @@ To use this server with an MCP client, configure it to connect to:
 }
 ```
 
+To use this server with Google-ADK:
+
+```
+from google.adk.agents.llm_agent import Agent
+from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, StreamableHTTPServerParams
+
+root_agent = Agent(
+    model="gemini-2.0-flash",
+    name="utility_agent",
+    instruction="You are a utility agent that can use the following tools to help the user.",
+    tools=[
+        MCPToolset(
+            connection_params=StreamableHTTPServerParams(
+                url="https://mcp-server-with-next-js.vercel.app/api/mcp"
+            )
+        ),
+    ],
+)
+```
+
 # 🏗️ Project Structure
 
 ```
@@ -96,12 +120,14 @@ mcp-nextjs/
 This application supports creating custom tools through the web interface. Custom tools can be stored in two ways:
 
 ### Local Storage Mode (Default)
+
 - Custom tools are stored in browser localStorage
 - Tools are specific to each browser/client
 - No database setup required
 - Suitable for development and single-user scenarios
 
 ### Database Mode (Production)
+
 - Custom tools are stored in PostgreSQL database
 - Tools are shared across all clients and persist between sessions
 - Requires database setup
@@ -110,13 +136,12 @@ This application supports creating custom tools through the web interface. Custo
 ### Enabling Database Storage
 
 1. **Set up a PostgreSQL database** (e.g., using Supabase, Vercel Postgres, or Railway)
-
 2. **Configure environment variables:**
+
    ```env
    USEDB=true
    DATABASE_URL=postgresql://username:password@host:port/database
    ```
-
 3. **The database table will be created automatically** when the application starts
 
 ### Custom Tool Types
